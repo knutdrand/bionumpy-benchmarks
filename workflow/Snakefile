@@ -5,6 +5,7 @@
 import bionumpy as bnp
 from bionumpy.intervals import intersect
 
+
 rule all:
     input:
         [f"results/{program}/protein_sequences/l150_n1000000.fa"
@@ -35,8 +36,6 @@ rule translate_bionumpy:
         from bionumpy.translate import Translate
         input_stream = bnp.open(input[0])
         output_stream = bnp.open(output[0], "w")
-        bnp.open(output[0], "w").write_stream(
-            (translate.windowed(buf.sequence)))
         for buf in input_stream:
             buf.sequence = Translate().windowed(buf.sequence)
             output_stream.write(buf)
@@ -52,7 +51,6 @@ rule translate_biopython:
     run:
         from Bio import SeqIO
         from Bio.SeqRecord import SeqRecord
-
         with open(output[0], 'w') as aa_fa:
             for dna_record in SeqIO.parse(input[0], 'fasta'):
                 new_record = SeqRecord(
@@ -82,13 +80,17 @@ rule intersect_bionumpy:
         "results/bionumpy/intersect/{a}_{b}.bed"
     benchmark:
         "benchmarks/intersect/bionumpy/{a}_{b}.txt"
-    run:
-        out_f = bnp.open(output[0], "w")
-        a = bnp.open(input[0])
-        b = bnp.open(input[1], mode="chromosome_stream")
-        for chromosome, result in intersect(a, b):
-            out_f.write(result)
-        out_f.close()
+    script:
+        "scripts/intersect.py"
+# out_f = bnp.open(output[0], "w")
+# print(out_f)
+# a = bnp.open(input[0])
+# b = bnp.open(input[1], mode="chromosome_stream")
+# print(a, b)
+# for chromosome, result in intersect(a, b):
+#     print("###", chromosome)
+#     out_f.write(result)
+# out_f.close()
 
 rule intersect_bedtools:
     input:
