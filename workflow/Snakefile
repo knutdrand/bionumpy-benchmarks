@@ -2,3 +2,101 @@
 # Please follow the best practices: 
 # https://snakemake.readthedocs.io/en/stable/snakefiles/best_practices.html,
 # in particular regarding the standardized folder structure mentioned there. 
+import bionumpy as bnp
+from bionumpy.intervals import intersect
+
+rule all:
+    input:
+        [f"results/{program}/protein_sequences/l150_n1000000.fa"
+         for program in ["bionumpy", "biopython"]],
+        [f"results/{program}/intersect/100000_1000000.bed"
+         for program in ["bionumpy", "bedtools"]],
+
+
+rule simulate_dna:
+    output:
+        "results/dna_sequences/l{length}_n{number}.fa"
+    run:
+        import random
+        with open(output[0], "w") as f:
+            for i in range(int(wildcards.number)):
+                f.write(f">{i}\n")
+                f.write("".join(random.choices("ACGT", k=int(wildcards.length)))+ "\n")
+
+
+rule translate_bionumpy:
+    input:
+        "results/dna_sequences/{name}.fa"
+    output:
+        "results/bionumpy/protein_sequences/{name}.fa"
+    benchmark:
+        "benchmarks/translate/bionumpy/{name}.txt"
+    run:
+        from bionumpy.translate import Translate
+        input_stream = bnp.open(input[0])
+        output_stream = bnp.open(output[0], "w")
+        bnp.open(output[0], "w").write_stream(
+            (translate.windowed(buf.sequence)))
+        for buf in input_stream:
+            buf.sequence = Translate().windowed(buf.sequence)
+            output_stream.write(buf)
+        output_stream.close()
+
+rule translate_biopython:
+    input:
+        "results/dna_sequences/{name}.fa"
+    output:
+        "results/biopython/protein_sequences/{name}.fa"
+    benchmark:
+        "benchmarks/translate/biopython/{name}.txt"
+    run:
+        from Bio import SeqIO
+        from Bio.SeqRecord import SeqRecord
+
+        with open(output[0], 'w') as aa_fa:
+            for dna_record in SeqIO.parse(input[0], 'fasta'):
+                new_record = SeqRecord(
+                    dna_record.seq.translate(),
+                    id=dna_record.id)
+                SeqIO.write(new_record, aa_fa, 'fasta')
+
+
+rule simulate_intervals:
+    output:
+        "results/intevals/{n_intervals}.bed"
+    run:
+        import random
+        with open(output[0], "w") as f:
+            for chromosome in range(1, 10):
+                start = 1
+                for _ in range(int(wildcards.n_intervals)):
+                    end = start+random.randint(1, 100)
+                    f.write(f"chr{chromosome}\t{start}\t{end}\t.\t.\t+\n")
+                    start= end + random.randint(1, 30)
+
+rule intersect_bionumpy:
+    input:
+        "results/intevals/{b}.bed",
+        "results/intevals/{a}.bed"
+    output:
+        "results/bionumpy/intersect/{a}_{b}.bed"
+    benchmark:
+        "benchmarks/intersect/bionumpy/{a}_{b}.txt"
+    run:
+        out_f = bnp.open(output[0], "w")
+        a = bnp.open(input[0])
+        b = bnp.open(input[1], mode="chromosome_stream")
+        for chromosome, result in intersect(a, b):
+            out_f.write(result)
+        out_f.close()
+
+rule intersect_bedtools:
+    input:
+        "results/intevals/{b}.bed",
+        "results/intevals/{a}.bed"
+    output:
+        "results/bedtools/intersect/{a}_{b}.bed"
+    benchmark:
+        "benchmarks/intersect/bedtools/{a}_{b}.txt"
+    shell:
+        "bedtools intersect -a {input[0]} -b {input[1]} > {output}"
